@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SondeHub Radiosonde Recovery Reporting</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1 class="no-margin">
+        <a href="https://sondehub.org/" target="_blank" rel="noreferrer">
+          <img src="img/sondehub_logo.jpg" alt="SondeHub" title="SondeHub">
+        </a>
+      </h1>
+      <span id="app_name">Radiosonde Recovery</span>
+    </div>
+  </header>
+
+  <main id="app" class="container">
+    <section class="panel">
+      <div class="step-header">
+        <div>
+          <h2 class="step-title">You found a radiosonde!</h2>
+        </div>
+      </div>
+      <p class="muted">Radiosondes are meteorological instruments used to sample the upper atmosphere, providing data that supports atmospheric weather models, and hence weather predictions. They are launched all around the world at regular (often 12 hourly) intervals, and land in all sorts of places!</p>
+      <div class="muted">
+        <div><strong>This page allows you to report the recovery of a radiosonde, which assists:</strong></div>
+        <ul>
+          <li>Other radiosonde hunters, so they know not to go looking for a radiosonde that has already been recovered.</li>
+          <li>Weather bureaus, so they know the spread of radiosonde landings from a particular launch site.</li>
+        </ul>
+      </div>
+     <p class="muted">Follow through the steps below to report what you have found. Recovery reports will appear on <a href="https://sondehub.org/" target="_blank" rel="noreferrer">sondehub.org</a> - if you make a mistake, submit another report, the latest will appear on the map. <a href="mailto:support@sondehub.org">Contact us</a> if you have issues with this page.</p>
+
+
+    </section>
+
+    <section class="panel" id="step1">
+      <div class="step-header">
+        <div>
+          <h2 class="step-title">1 - What kind of Radiosonde?</h2>
+          <p class="step-subtitle">Click on the radiosonde type that best matches what you have found.</p>
+        </div>
+      </div>
+      <div class="type-grid" id="typeGrid"></div>
+      <div class="status-line">Hover to see the full manufacturer and type. Click to select and unlock the next step.</div>
+      <div class="collapsed-tip">Type selection collapsed. Click to expand and change.</div>
+    </section>
+
+    <section class="panel hidden" id="step2">
+      <div class="step-header">
+        <div>
+          <h2 class="step-title">2 - Serial number entry</h2>
+          <p class="step-subtitle">Tell us the serial number printed on the radiosonde.</p>
+        </div>
+      </div>
+      <div class="callout" id="serialHint">
+        Depending on the radiosonde type selected, a short guide for locating the serial number may appear here.
+      </div>
+      <div class="form-row">
+        <div class="field-group"">
+          <label for="serialInput">Enter the serial number</label>
+          <input type="text" id="serialInput" placeholder="e.g. N1234567" autocomplete="off">
+        </div>
+        <div class="field-group">
+          <label>&nbsp;</label>
+          <button id="lookupBtn" type="button">Lookup</button>
+        </div>
+      </div>
+      <div class="status-line" id="lookupStatus">Waiting for a serial number.</div>
+      <div id="recoveryInfo" class="callout hidden"></div>
+    </section>
+
+    <section class="panel hidden" id="step3">
+      <div class="step-header">
+        <div>
+          <h2 class="step-title">3 - Location</h2>
+          <p class="step-subtitle">Confirm where this radiosonde landed. Drag the marker or type in coordinates.</p>
+        </div>
+      </div>
+      <div class="map-layout">
+        <div class="map-card">
+          <div id="map"></div>
+          <div class="hint">Toggle between OpenStreetMap and satellite in the map controls. Drag the marker to adjust the landing location if needed.</div>
+        </div>
+        <div class="map-card">
+        <div class="field-group">
+          <label for="latInput">Latitude</label>
+          <input type="number" step="any" id="latInput" placeholder="Latitude">
+        </div>
+        <div class="field-group">
+          <label for="lonInput">Longitude</label>
+          <input type="number" step="any" id="lonInput" placeholder="Longitude">
+        </div>
+        <div class="field-group">
+          <label for="altInput">Altitude (m)</label>
+          <input type="number" step="any" id="altInput" placeholder="Altitude">
+        </div>
+        <div class="field-group">
+          <button id="useLocationBtn" type="button" class="secondary">Use my location</button>
+        </div>
+          <div class="status-line" id="locationErrors"></div>
+          <div class="status-line" id="locationStatus">Waiting for sonde data or your location.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel hidden" id="step4">
+      <div class="step-header">
+        <div>
+          <h2 class="step-title">4 - Recovery details</h2>
+          <p class="step-subtitle">Share details about where and how you found this radiosonde. Reporting a failed recovery is still useful! You can submit a recovery report multiple times, with the most recent one appearing on sondehub.org</p>
+        </div>
+      </div>
+      <form id="recoveryForm" class="map-card">
+        <div class="field-group">
+          <label>Did you recover this radiosonde?</label>
+          <div class="choice-row">
+            <label><input type="radio" name="recovered" value="yes" checked> Yes</label>
+            <label><input type="radio" name="recovered" value="no"> No</label>
+          </div>
+        </div>
+        <div class="field-group hidden" id="plannedWrapper">
+          <label>Are you planning on recovering this radiosonde in the future?</label>
+          <div class="choice-row">
+            <label><input type="radio" name="planned" value="yes" checked> Yes</label>
+            <label><input type="radio" name="planned" value="no"> No</label>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="form-row">
+          <div class="field-group">
+            <label for="nameInput">Your name or callsign (Required)</label>
+            <input type="text" id="nameInput" placeholder="Callsign or name" required>
+          </div>
+          <div class="field-group">
+            <label for="emailInput">Contact e-mail <span class="muted">(optional)</span></label>
+            <input type="email" id="emailInput" placeholder="you@example.com">
+          </div>
+        </div>
+        <div class="field-group">
+          <label for="notesInput">Any other recovery notes <span class="muted">(optional)</span></label>
+          <textarea id="notesInput" placeholder="Condition, accessibility, anything else helpful…"></textarea>
+        </div>
+        <div class="field-group">
+          <button type="submit" id="submitBtn">Submit recovery report</button>
+        </div>
+        <div class="status-line" id="submitStatus">Ready to send to SondeHub.</div>
+      </form>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="app.js"></script>
+</body>
+</html>
