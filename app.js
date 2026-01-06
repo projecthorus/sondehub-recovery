@@ -203,23 +203,39 @@ document.addEventListener("DOMContentLoaded", () => {
     let hasExistingRecovery = false;
     lastSondePosition = null;
     lastPredictionPosition = null;
+    let usedTelemetry = false;
     try {
-      const response = await fetch(`https://api.v2.sondehub.org/sonde/${encodeURIComponent(lookupSerialValue)}`);
-      if (!response.ok) {
-        throw new Error("No data returned for this serial. You can still continue.");
-      }
-      const data = await response.json();
-      const position = extractPosition(data);
-      if (position) {
-        setMapLocation(position.lat, position.lon, true, position.alt);
-        lastSondePosition = position;
-        setSondeMarker(position.lat, position.lon);
-        locationStatus.textContent = "Last observed sonde position loaded. Adjust if needed.";
+      // First try is to use the /sondes/telemetry/ API, this uses a bit less data
+      // but will only work for sondes seen within the last 3 hours.
+      const telemetryPosition = await fetchTelemetryPosition(lookupSerialValue);
+      if (telemetryPosition) {
+        setMapLocation(telemetryPosition.lat, telemetryPosition.lon, true, telemetryPosition.alt);
+        lastSondePosition = telemetryPosition;
+        setSondeMarker(telemetryPosition.lat, telemetryPosition.lon);
+        locationStatus.textContent = "Last observed sonde position loaded from telemetry. Adjust if needed.";
         locationStatus.className = "status-line";
-      } else {
-        locationErrors.textContent = "Could not find this serial in the SondeHub Database. You can still enter the location manually.";
-        locationErrors.className = "status-line error-text";
-        useMyLocation();
+        usedTelemetry = true;
+      }
+
+      if (!usedTelemetry) {
+        // If /sondes/telemetry fails, use /sonde/, which calls into S3
+        const response = await fetch(`https://api.v2.sondehub.org/sonde/${encodeURIComponent(lookupSerialValue)}`);
+        if (!response.ok) {
+          throw new Error("No data returned for this serial. You can still continue.");
+        }
+        const data = await response.json();
+        const position = extractPosition(data);
+        if (position) {
+          setMapLocation(position.lat, position.lon, true, position.alt);
+          lastSondePosition = position;
+          setSondeMarker(position.lat, position.lon);
+          locationStatus.textContent = "Last observed sonde position loaded. Adjust if needed.";
+          locationStatus.className = "status-line";
+        } else {
+          locationErrors.textContent = "Could not find this serial in the SondeHub Database. You can still enter the location manually.";
+          locationErrors.className = "status-line error-text";
+          useMyLocation();
+        }
       }
       lookupStatus.textContent = "Lookup finished. Continue with the location below.";
       lookupStatus.className = "status-line success-text";
@@ -268,6 +284,31 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
     return null;
+  }
+
+  async function fetchTelemetryPosition(serial) {
+    try {
+      const response = await fetch(`https://api.v2.sondehub.org/sondes/telemetry?duration=3h&serial=${encodeURIComponent(serial)}`);
+      if (!response.ok) return null;
+      const data = await response.json();
+      if (!data || typeof data !== "object") return null;
+
+      const serialKey = Object.keys(data).find((key) => typeof key === "string" && key.toUpperCase() === serial.toUpperCase());
+      const telemetryEntries = serialKey ? Object.entries(data[serialKey] || {}) : [];
+      if (telemetryEntries.length === 0) return null;
+
+      const latest = telemetryEntries.reduce((current, [timestamp, record]) => {
+        const timeValue = Date.parse(timestamp);
+        if (!Number.isFinite(timeValue)) return current;
+        if (!current || timeValue > current.timeValue) return { timeValue, record };
+        return current;
+      }, null);
+
+      const latestRecord = latest?.record || telemetryEntries[telemetryEntries.length - 1][1];
+      return extractPosition(latestRecord);
+    } catch (error) {
+      return null;
+    }
   }
 
   function normalizeSerial(serial) {
