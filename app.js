@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   const sondeTypes = [
-    { id: "rs41", label: "RS41", full: "Vaisala RS41", image: "img/rs41sge.jpg" },
     { id: "dfm17", label: "DFM17", full: "Graw DFM17", image: "img/dfm17.jpg" },
+    { id: "rs41", label: "RS41", full: "Vaisala RS41", image: "img/rs41sge.jpg" },
     { id: "m20", label: "M20", full: "Meteomodem M20", image: "img/m20.jpg" },
     { id: "m10", label: "M10", full: "Meteomodem M10", image: "img/m10.jpg" },
     { id: "imet4", label: "iMet-4", full: "InterMet iMet-4", image: "img/imet4.jpg" },
