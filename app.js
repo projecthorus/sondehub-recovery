@@ -481,8 +481,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateLatLonInputs(lat, lon) {
-    latInput.value = Number.isFinite(lat) ? lat.toFixed(6) : "";
-    lonInput.value = Number.isFinite(lon) ? lon.toFixed(6) : "";
+    latInput.value = Number.isFinite(lat) ? lat.toFixed(5) : "";
+    lonInput.value = Number.isFinite(lon) ? lon.toFixed(5) : "";
   }
 
   function updateAltInput(alt) {
@@ -500,6 +500,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (center) {
       map.setView([safeLat, safeLon], 12);
+    } else{
+      map.panTo([safeLat, safeLon])
     }
   }
 
@@ -512,7 +514,7 @@ document.addEventListener("DOMContentLoaded", () => {
       locationStatus.className = "status-line error-text";
       return;
     }
-    setMapLocation(lat, lon, true, Number.isFinite(alt) ? alt : null);
+    setMapLocation(lat, lon, false, Number.isFinite(alt) ? alt : null);
     locationStatus.textContent = "Location updated from manual entry.";
     locationStatus.className = "status-line success-text";
   }

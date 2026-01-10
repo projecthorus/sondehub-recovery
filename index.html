@@ -85,20 +85,20 @@
       <div class="map-layout">
         <div class="map-card">
           <div id="map"></div>
-          <div class="hint">Toggle between OpenStreetMap and satellite in the map controls. Drag the marker to adjust the landing location if needed.</div>
+          <div class="hint"><b>Drag the marker to adjust the landing location if needed.</b> Toggle between OpenStreetMap and satellite in the map controls. </div>
         </div>
         <div class="map-card">
         <div class="field-group">
           <label for="latInput">Latitude</label>
-          <input type="number" step="any" id="latInput" placeholder="Latitude">
+          <input type="number" step=0.00001 id="latInput" placeholder="Latitude">
         </div>
         <div class="field-group">
           <label for="lonInput">Longitude</label>
-          <input type="number" step="any" id="lonInput" placeholder="Longitude">
+          <input type="number" step=0.00001 id="lonInput" placeholder="Longitude">
         </div>
         <div class="field-group">
           <label for="altInput">Altitude (m)</label>
-          <input type="number" step="any" id="altInput" placeholder="Altitude">
+          <input type="number" step=0.1 id="altInput" placeholder="Altitude">
         </div>
         <div class="field-group">
           <button id="useLocationBtn" type="button" class="secondary">Use my location</button>
