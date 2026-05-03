@@ -49,6 +49,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let predictionPolyline;
   let lastSondePosition = null;
   let lastPredictionPosition = null;
+  let recentSondesBySerial = null;
+  let recentSondesPromise = null;
 
   function renderSondeTypes() {
     typeGrid.innerHTML = "";
@@ -203,44 +205,22 @@ document.addEventListener("DOMContentLoaded", () => {
     let hasExistingRecovery = false;
     lastSondePosition = null;
     lastPredictionPosition = null;
-    let usedTelemetry = false;
     try {
-      // First try is to use the /sondes/telemetry/ API, this uses a bit less data
-      // but will only work for sondes seen within the last 3 hours.
-      const telemetryPosition = await fetchTelemetryPosition(lookupSerialValue);
-      if (telemetryPosition) {
-        setMapLocation(telemetryPosition.lat, telemetryPosition.lon, true, telemetryPosition.alt);
-        lastSondePosition = telemetryPosition;
-        setSondeMarker(telemetryPosition.lat, telemetryPosition.lon);
-        locationStatus.textContent = "Last observed sonde position loaded from telemetry. Adjust if needed.";
-        locationStatus.className = "status-line";
-        usedTelemetry = true;
+      const recentPosition = await fetchRecentSondePosition(lookupSerialValue);
+      if (recentPosition) {
+        applySondePosition(recentPosition, "Last observed sonde position loaded from the recent SondeHub list. Adjust if needed.");
       }
 
-      if (!usedTelemetry) {
-        // If /sondes/telemetry fails, use /sonde/, which calls into S3
-        const response = await fetch(`https://api.v2.sondehub.org/sonde/${encodeURIComponent(lookupSerialValue)}`);
-        if (!response.ok) {
-          throw new Error("No data returned for this serial. You can still continue.");
-        }
-        const data = await response.json();
-        const position = extractPosition(data);
-        if (position) {
-          setMapLocation(position.lat, position.lon, true, position.alt);
-          lastSondePosition = position;
-          setSondeMarker(position.lat, position.lon);
-          locationStatus.textContent = "Last observed sonde position loaded. Adjust if needed.";
-          locationStatus.className = "status-line";
-        } else {
-          locationErrors.textContent = "Could not find this serial in the SondeHub Database. You can still enter the location manually.";
-          locationErrors.className = "status-line error-text";
-          useMyLocation();
-        }
+      await fetchPrediction(lookupSerialValue);
+
+      if (!lastSondePosition) {
+        locationErrors.textContent = "Could not find this serial in the SondeHub Database. You can still enter the location manually.";
+        locationErrors.className = "status-line error-text";
+        useMyLocation();
       }
       lookupStatus.textContent = "Lookup finished. Continue with the location below.";
       lookupStatus.className = "status-line success-text";
       hasExistingRecovery = await fetchRecoveryReports(serial);
-      await fetchPrediction(lookupSerialValue);
     } catch (error) {
       lookupStatus.textContent = error.message || "Lookup failed. ";
       lookupStatus.className = "status-line error-text";
@@ -260,6 +240,16 @@ document.addEventListener("DOMContentLoaded", () => {
         scrollIntoView(steps[3]);
       }
     }
+  }
+
+  function applySondePosition(position, message) {
+    setMapLocation(position.lat, position.lon, true, position.alt);
+    lastSondePosition = position;
+    setSondeMarker(position.lat, position.lon);
+    locationStatus.textContent = message;
+    locationStatus.className = "status-line";
+    locationErrors.textContent = "";
+    locationErrors.className = "status-line";
   }
 
   function extractPosition(data) {
@@ -286,29 +276,84 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  async function fetchTelemetryPosition(serial) {
-    try {
-      const response = await fetch(`https://api.v2.sondehub.org/sondes/telemetry?duration=3h&serial=${encodeURIComponent(serial)}`);
-      if (!response.ok) return null;
-      const data = await response.json();
-      if (!data || typeof data !== "object") return null;
+  function normalizeSerialKey(serial) {
+    return String(serial || "").trim().toUpperCase();
+  }
 
-      const serialKey = Object.keys(data).find((key) => typeof key === "string" && key.toUpperCase() === serial.toUpperCase());
-      const telemetryEntries = serialKey ? Object.entries(data[serialKey] || {}) : [];
-      if (telemetryEntries.length === 0) return null;
+  function indexRecentSondes(data) {
+    const index = new Map();
 
-      const latest = telemetryEntries.reduce((current, [timestamp, record]) => {
-        const timeValue = Date.parse(timestamp);
-        if (!Number.isFinite(timeValue)) return current;
-        if (!current || timeValue > current.timeValue) return { timeValue, record };
-        return current;
-      }, null);
+    const extractNestedPosition = (record) => {
+      if (!record || typeof record !== "object" || Array.isArray(record)) return null;
 
-      const latestRecord = latest?.record || telemetryEntries[telemetryEntries.length - 1][1];
-      return extractPosition(latestRecord);
-    } catch (error) {
-      return null;
+      const nestedPositions = Object.entries(record)
+        .map(([key, value], order) => ({
+          order,
+          timeValue: Date.parse(key),
+          position: extractPosition(value)
+        }))
+        .filter((entry) => entry.position);
+
+      if (nestedPositions.length === 0) return null;
+
+      return nestedPositions.reduce((latest, entry) => {
+        if (!Number.isFinite(entry.timeValue)) {
+          return !latest || entry.order > latest.order ? entry : latest;
+        }
+        if (!latest || !Number.isFinite(latest.timeValue) || entry.timeValue > latest.timeValue) {
+          return entry;
+        }
+        return latest;
+      }, null).position;
+    };
+
+    const addRecord = (record, serialHint = "") => {
+      const position = extractPosition(record) || extractNestedPosition(record);
+      if (!position) return;
+
+      const serials = [
+        serialHint,
+        record?.serial,
+        record?.vehicle,
+        record?.id,
+        record?.callsign
+      ].map(normalizeSerialKey).filter(Boolean);
+
+      serials.forEach((serial) => index.set(serial, position));
+    };
+
+    if (Array.isArray(data)) {
+      data.forEach((record) => addRecord(record));
+    } else if (data && typeof data === "object") {
+      Object.entries(data).forEach(([serial, record]) => addRecord(record, serial));
     }
+
+    return index;
+  }
+
+  function preloadRecentSondes() {
+    if (recentSondesPromise) return recentSondesPromise;
+
+    recentSondesPromise = fetch("https://api.v2.sondehub.org/sondes")
+      .then((response) => {
+        if (!response.ok) throw new Error("Recent SondeHub list unavailable.");
+        return response.json();
+      })
+      .then((data) => {
+        recentSondesBySerial = indexRecentSondes(data);
+        return recentSondesBySerial;
+      })
+      .catch(() => {
+        recentSondesBySerial = new Map();
+        return recentSondesBySerial;
+      });
+
+    return recentSondesPromise;
+  }
+
+  async function fetchRecentSondePosition(serial) {
+    const index = recentSondesBySerial || await preloadRecentSondes();
+    return index.get(normalizeSerialKey(serial)) || null;
   }
 
   function normalizeSerial(serial) {
@@ -690,7 +735,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function extractPredictionPosition(resp) {
     const candidates = [];
-    console.log(resp);
     if (Array.isArray(resp)) candidates.push(...resp);
     if (resp && typeof resp === "object") {
       if (Array.isArray(resp.predictions)) candidates.push(...resp.predictions);
@@ -699,7 +743,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (Array.isArray(v)) candidates.push(...v);
       });
     }
-    console.log(candidates);
 
     const parseDataArray = (value) => {
       if (Array.isArray(value)) return value;
@@ -715,6 +758,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     for (const entry of candidates) {
+      const observed = extractPosition(entry);
       const dataArr = parseDataArray(entry?.data) || parseDataArray(entry);
       if (Array.isArray(dataArr) && dataArr.length > 0) {
         const last = dataArr[dataArr.length - 1];
@@ -729,8 +773,11 @@ document.addEventListener("DOMContentLoaded", () => {
               alt: parseFloat(p.alt ?? p.altitude)
             }))
             .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-          return { last: { lat, lon, alt: Number.isFinite(alt) ? alt : null }, track };
+          return { observed, last: { lat, lon, alt: Number.isFinite(alt) ? alt : null }, track };
         }
+      }
+      if (observed) {
+        return { observed, last: null, track: [] };
       }
     }
     return null;
@@ -742,8 +789,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!response.ok) throw new Error("No prediction available.");
       const data = await response.json();
       const prediction = extractPredictionPosition(data);
-      console.log(prediction);
       if (!prediction) return null;
+
+      if (!lastSondePosition && prediction.observed) {
+        applySondePosition(prediction.observed, "Last observed sonde position loaded from SondeHub predictions. Adjust if needed.");
+      }
 
       const sondeAlt = lastSondePosition?.alt;
       const predAlt = prediction.last?.alt;
@@ -770,6 +820,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   renderSondeTypes();
+  preloadRecentSondes();
   lookupBtn.addEventListener("click", lookupSerial);
   serialInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
